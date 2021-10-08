@@ -1,0 +1,803 @@
+---
+title: "Survey_analysis"
+author: "MDP"
+date: "19/09/2021"
+output: 
+  html_document:
+    toc: true
+    toc_depth: 3
+    theme: flatly
+editor_options: 
+  chunk_output_type: console
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = F)
+knitr::opts_chunk$set(warning = F)
+knitr::opts_chunk$set(message = F)
+```
+
+# Introduction
+
+We will analyze the data coming from the ExpMed GSS about experiences of students in the program. It contains information about the characteristics of the student, their funding (received and applied for), the courses they have taken and opinions about different aspects of the program and the graduate student experience in our program. 
+
+## Data import and data wrangling
+
+Our first step is to load any required packages and the data. 
+To analyze it we will probably need to clean-up some of the data in excel and through R, so we load the tidyverse. 
+
+```{r, message=FALSE, warning=FALSE, echo=FALSE}
+require(tidyverse)
+require(qualtRics)
+require(knitr)
+```
+
+We import the dataset using the qualtric package to enter the data as it organizes it nicely for further analysis. 
+
+I transform all character variables to factors as they are easier to analyse. I also drop some variables from the Qualtrics page that do not have valuable information or are text (need to be codified). 
+
+```{r, message=FALSE}
+survey<- read_survey(file_name = "Experimental+Medicine+Student+Society+Survey_August+4,+2021_17.59.csv", 
+                     legacy = F,
+                     import_id = F
+                     ) %>% 
+  as_tibble() %>% 
+  mutate(across(where(is.character), as_factor))
+
+# colnames collected inside a label, names show only ID
+colnames(survey)[40:50]
+
+# eliminate unnecessary columns with text
+survey1 <- survey %>%  select(Progress, starts_with("Q"), -contains("Text"), -Q_BallotBoxStuffing)
+```
+
+## Survey dictionary 
+
+Finally, using the qualtRics package we extract a list of variable descriptions for our reference throughout the analysis
+
+```{r}
+questions_guide<- extract_colmap(survey1) %>%
+  select(qname, description) 
+
+glimpse(questions_guide)
+```
+
+# Demographic data summary
+
+Now we move to explore the completion rate of the survey and moving on to characteristics of the respondent:
+
+- type of graduate program (Q17)
+- domestic vs international (Q18)
+- year of program (Q72)
+
+### Completion rate of the survey
+
+```{r, echo=FALSE}
+ggplot(survey, aes(x=as_factor(Progress), fill=as_factor(Progress))) +
+  geom_bar() +
+  labs(title= "Completion of the survey (n=82)",
+       x="Percentage of completion")  +
+  theme(legend.position= "none") +
+  scale_fill_brewer(palette="Set1")
+
+table (completion_rate=survey$Progress) %>% 
+  prop.table() %>% 
+  {.*100} %>% 
+  round(2)
+```
+
+A majority of the 82 participants (61, 74.4%) completed all the survey questions.
+
+### Q17 & Q18: Type of graduate program and student type 
+
+We see that PhD and MSc responders are in their majority domestic: 84.8 vs 15.2% in MSc program and 65.9% vs 34.1% in the PhD program. Also, we had a higher rate of PhD responders (55.4%) compared to MSc students (44.6%).
+In particular, most of the MSc responders 
+
+```{r, include=FALSE}
+
+table(Program=survey1$Q17) %>% 
+  prop.table() %>% 
+  {.*100} %>% 
+  round(1) %>% 
+  kable()
+
+table(survey1$Q17, 
+      survey1$Q18) %>% 
+  kable()
+
+table(survey1$Q17, 
+      survey1$Q18) %>%
+  prop.table(margin = 1) %>% 
+  {.*100} %>% 
+  round(1) %>% 
+  kable()
+```
+
+### Q72: Number of years in the program
+
+```{r}
+## The levels were disorganized so I correct it before plotting
+
+survey1 <-  survey1 %>% 
+  mutate(
+    Q72=gsub(x=Q72, pattern = ": Please Specify", replacement = ""),
+    Q72=forcats::fct_relevel(Q72, sort),)
+
+# levels(survey1$Q72)
+```
+
+__MSc vs PhD__
+
+Most of the MSc responders are in the first 2 years of the degree (as expected) and PhD respondents are mostly in their second to fourth year of the program. Thus, early PhD students are probably not represented in the sample. 
+
+```{r}
+survey1 %>% 
+  filter(!is.na(Q17)) %>% 
+  ggplot(aes(x=Q72, fill=as.factor(Q17))) +
+  geom_bar() + 
+  labs(title="Year of studies according to type of program (n=74)",
+       fill="Graduate program",
+       x="year of program")+
+  facet_wrap(~Q17) +
+  scale_fill_brewer(palette = "Dark2") +
+  theme(axis.text.x = element_text(angle = 90))
+```
+
+__Domestic vs international__
+
+If we separate the results in International vs Domestic, most international students are in year 2 or beyond. Which is expected based on the public health situation limiting start of international students. 
+
+```{r, echo=FALSE}
+survey1 %>% 
+  filter(!is.na(Q18)) %>% 
+  ggplot(aes(x=Q72, fill=as.factor(Q18))) +
+  geom_bar() + 
+  labs(title="Year of studies according to Domestic Vs. International (n=74)",
+       fill="Int vs Domestic",
+       x="year of program")+
+  facet_wrap(~Q18) +
+  scale_fill_brewer(palette = "Set1") +
+  theme(axis.text.x = element_text(angle = 90))
+```
+
+### Q62: start date
+
+In this plot, we see the date of start in the X axis and the count of students in the Y-axis. Most of the MSc responders started in or after 2019. In contrast, start dates of PhD students are more evenly distributed.
+
+```{r}
+survey1 %>% 
+  count(Q62, Q17) %>% 
+  drop_na() %>% 
+  ggplot(aes(x=Q62, y=n, colour=factor(Q17))) +
+  geom_jitter() +
+  labs(title="Date of program start (n=68)",
+       y="Number of students at given start date",
+       x="Year of first term",
+       colour="Program") +
+  scale_y_continuous(expand = c(0, 0), limits = c(0, NA)) +
+  theme_gray()
+```
+
+# Program feedback
+
+The following questions contain information about student satisfaction in the program and will be summarized by graduate program and international status. 
+
+```{r}
+# utils::View(questions_guide)
+questions_guide %>% 
+  slice(18:38) %>% 
+  view()
+```
+
+### Q4: How reasonable or unreasonable is the tuition cost at this university?
+
+In general, both MSc and Phd students found the tuition fees to be between somewhat reasonable, somewhat unreasonable and neither reasonable or unreasonable. 
+
+Domestic students showed a tendency to find the tuition somewhat reasonable as shown in the graph (45.4%). 
+```{r}
+#############################
+
+survey1 %>% 
+  count(Q4) %>% 
+  mutate(freq=n*82/100) %>% 
+  kable(format = "simple")
+
+#############################
+
+survey1 %>% 
+  filter(!is.na(Q17)) %>% 
+  ggplot(aes(x=Q4, fill=as.factor(Q17))) +
+  geom_bar() + 
+  labs(title="Thoughts about the tuition according to program (n=74)")+
+  facet_wrap(~Q17) +
+  scale_fill_brewer(palette = "Dark2") +
+  theme(axis.text.x = element_text(angle = 90, size=10),
+        legend.position = "none",
+        axis.title.x = element_blank())
+
+survey1 %>% 
+  filter(!is.na(Q18)) %>% 
+  ggplot(aes(x=Q4, fill=as.factor(Q18))) +
+  geom_bar() + 
+  labs(title="Thoughts about the tuition Domestic vs International (n=74)")+
+  facet_wrap(~Q18) +
+  scale_fill_brewer(palette = "Set1") +
+  theme(axis.text.x = element_text(angle = 90, size=10),
+        legend.position = "none",
+        axis.title.x = element_blank())
+```
+
+### Q5: Overall, how satisfied or dissatisfied are you with the ExMed program?
+
+The most common responses of satisfaction with the program were in the categories of Somewhat satisfied and Neither satisfied nor disatisfied. This distribution did not change according to domestic status or type of program
+
+```{r}
+
+table(Satisfaction=survey1$Q5, useNA = "always") %>% 
+  addmargins() %>% 
+  kable()
+
+survey1 %>% 
+  filter(!is.na(Q17)) %>% 
+  ggplot(aes(x=Q5, fill=as.factor(Q17))) +
+  geom_bar() + 
+  labs(title="Satisfaction with the program (n=71)")+
+  facet_wrap(~Q17) +
+  scale_fill_brewer(palette = "Dark2") +
+  theme(axis.text.x = element_text(angle = 90, size=10),
+        legend.position = "none",
+        axis.title.x = element_blank())
+
+survey1 %>% 
+  filter(!is.na(Q18)) %>% 
+  ggplot(aes(x=Q5, fill=as.factor(Q18))) +
+  geom_bar() + 
+  labs(title="Satisfaction with the program (n=71)")+
+  facet_wrap(~Q18) +
+  scale_fill_brewer(palette = "Set1") +
+  theme(axis.text.x = element_text(angle = 90, size=10),
+        legend.position = "none",
+        axis.title.x = element_blank())
+```
+
+### Q6: How likely are you to recommend this program to students considering graduate school options?
+
+Interestingly, a majority of the students would not recommend the program to others (39%), while another 34% are neutral about recommending it. As we see in the plot, doctoral students were detractors of the program more frequently. 
+
+In the question about how likely, from 1 to 10, were you to recommend the program to someone else. The score of answers from PhD students was lower (median=6) compared to those from the MSc program (median=7). These differences are non-significative in a nonparametric test (p=0.71). The likelihood of recommending the program is similar between international and domestic students 
+
+```{r}
+survey1 %>% 
+  count(Q6_NPS_GROUP) %>% 
+  mutate(freq=n/82*100) %>% 
+  kable()
+
+survey1 %>% 
+  filter(!is.na(Q17)) %>% 
+  ggplot(aes(x=Q6_NPS_GROUP, fill=as.factor(Q17))) +
+  geom_bar() + 
+  labs(title="How likely to recommend the program (n=74)")+
+  facet_wrap(~Q17) +
+  scale_fill_brewer(palette = "Dark2") +
+  theme(axis.text.x = element_text(angle = 90, size=10),
+        legend.position = "none",
+        axis.title.x = element_blank())
+
+wilcox.test(survey1$Q6~survey1$Q17)
+
+
+survey1 %>% 
+  filter(!is.na(Q17)) %>% 
+  ggplot(aes(y=Q6, x=Q17, fill=as.factor(Q17))) +
+  geom_boxplot() + 
+  geom_jitter(color="black", size=1.7, alpha=0.9) +
+  labs(title="How likely to recommend the program (n=74)",
+       y="1-Less likely to 10- More likely")+
+  scale_fill_brewer(palette = "Dark2") +
+  theme(axis.text.x = element_text(angle = 90, size=10),
+        legend.position = "none",
+        axis.title.x = element_blank())
+
+survey1 %>% 
+  filter(!is.na(Q18)) %>% 
+  ggplot(aes(y=Q6, x=Q18, fill=as.factor(Q18))) +
+  geom_boxplot() + 
+  geom_jitter(color="black", size=1.7, alpha=0.9) +
+  labs(title="How likely to recommend the program (n=74)",
+       y="1-Less likely to 10- More likely")+
+  scale_fill_brewer(palette = "Set1") +
+  theme(axis.text.x = element_text(angle = 90, size=10),
+        legend.position = "none",
+        axis.title.x = element_blank())
+```
+
+
+### Q36: Did you attend an ExMed orientation?
+
+51 out of 82 (51.2%) students attended an ExMed orientation. Only 23 (28%) explicitly stated that they did not attend an orientation meeting. 
+
+```{r, message=FALSE, warning=FALSE}
+#install.packages("waffle")
+library(waffle)
+```
+
+
+```{r}
+survey1 %>% 
+  count(Q36) %>%
+  mutate(freq=n/82*100) 
+
+survey1 %>%
+  count(Q36, sort = T) %>%
+  mutate(Q36=fct_explicit_na(Q36)) %>% 
+  ggplot(aes(fill=Q36, values=n)) +
+  geom_waffle(n_rows = 9,
+              size = 1.5, 
+              colour = "white") +
+  labs(title="Did you attend and ExpMed orientation?") +
+  scale_fill_manual(name = NULL,
+                    values = c("#FF8288", "#BA182A",  "#FFDBDD"),
+                    labels = c("No (28%)", "Yes (51.2%)",  "Missing (20.7%)")) +
+  coord_equal() +
+  theme_void()
+```
+
+### Q71: How easy has it been to find information you need about processes and requirements of the program?
+
+In general, students answered that finding information about the program was somewhat easy. However, 12 (14.6%) of responders manifested that this process was somewhat difficult. 
+
+```{r}
+survey1 %>% 
+  count(Q71) %>% 
+  mutate(freq=n/82*100)
+
+survey1 %>% 
+  filter(!is.na(Q71)) %>% 
+  ggplot(aes(x=Q71, fill=factor(Q71))) +
+  geom_bar() + 
+  labs(title="How easy to find information processes/program (n=65)")+
+  scale_fill_brewer(palette = "Dark2") +
+  theme(axis.text.x = element_text(angle = 90, size=10),
+        legend.position = "none",
+        axis.title.x = element_blank())
+```
+
+### Q28: What courses have you taken to meet your requirements? 
+
+Most of the students took coursed from the faculty of medicine, particularly the mandatory courses (MEDI 501, MEDI 502 & thesis courses). Only ~9% of the answers are about courses not listed. Maybe there is an opportunity for students to diversify their curriculum according to their interests. 
+
+![qualtrics_image_bars](qualtrics_images/courses_taken_bars.png)
+
+### Q34 : Were you able to register in all the courses you were interested in?
+
+```{r}
+survey1 %>%
+  count(Q36, sort = T) %>%
+  mutate(freq=n/82*100)
+
+survey1 %>%
+  count(Q34) %>%
+  mutate(Q34=fct_explicit_na(Q34)) %>%
+  ggplot(aes(fill=Q34, values=n)) +
+  geom_waffle(n_rows = 9,
+              size = 1.5, 
+              colour = "white") +
+  labs(title="Able to register in desired courses?") +
+  scale_fill_manual(name = NULL,
+                    values = c("#BA182A", "#FF8288", "#FFDBDD"),
+                    labels = c("Yes (64.6%)", "No (13.4%)", "Missing (22%)")) +
+  coord_equal() +
+  theme_void()
+```
+
+Most of the responders were able to register in their desired courses (64.6%). We could assume that there is enough availability of seats in the MEDI courses as these were the most popular ones among students.
+
+### Q35: What was your experience with registering in courses outside of MEDI? 
+
+```{r}
+table(how_easy=survey1$Q35, useNA = "always") %>% 
+  addmargins() %>% 
+  kable()
+
+```
+
+Not a lot of answers (14) to make any interpretation. Most of the students probably did not have experience registering in courses outside of MEDI (68/82).
+
+### Q29: What was your overall satisfaction with the courses you took?
+
+```{r}
+survey1 %>% 
+  filter(!is.na(Q29)) %>% 
+  ggplot(aes(x=Q29, fill=factor(Q29))) +
+  geom_bar() + 
+  labs(title="Satisfaction with courses taken? (n=61)")+
+  scale_fill_brewer(palette = "Dark2") +
+  theme(axis.text.x = element_text(angle = 90, size=10),
+        legend.position = "none",
+        axis.title.x = element_blank())
+
+```
+
+As we have seen in previous questions, the bulk of the answers seem to gravitate between 'neutral' and 'somewhat satisfied' opinions. Unsatisfaction with the courses taken is low (n<15)
+
+### Q33: Do you feel that there should be more MEDI electives, i.e. courses that are not MEDI 501/502/503?
+
+```{r}
+table(more_MEDI_electives=survey1$Q33, useNA = "always") %>% 
+  addmargins() %>% 
+  kable()
+
+survey1 %>%
+  count(Q33) %>%
+  mutate(Q33=fct_explicit_na(Q33)) %>%
+  ggplot(aes(fill=Q33, values=n)) +
+  geom_waffle(n_rows = 9,
+              size = 1.5, 
+              colour = "white") +
+  labs(title="Do you feel that there should be more MEDI electives?") +
+  scale_fill_manual(name = NULL,
+                    values = c("#BA182A", "#FF8288", "#FFDBDD"),
+                    labels = c("Yes (57.3%)", "No (18.3%)", "Missing (24.4%)")) +
+  coord_equal() +
+  theme_void()
+```
+
+In general, students desire more elective courses from the faculty of Medicine. It could be interesting to follow-up with an initiative about what kind of courses. Maybe voting for broad categories (qualitative research, bioinformatics, public health, health economics, etc.)
+
+### Q57 - We are interested in hearing about your relationship with your supervisor
+
+```{r}
+q57<- read_csv(file = "Q57_supervisor_relationship.csv") %>%
+  pivot_longer(
+    cols = -c(Question, Total),
+    names_to = "score",
+    values_to = "count"
+  )
+
+# plot first 3 questions 
+slice(q57, 1:15)  %>% 
+  ggplot( aes(x=score, y=count, fill=score) ) +
+  geom_histogram(stat = "identity", position = "dodge") +
+  facet_grid(~Question) +
+  scale_fill_brewer(palette = "BuGn") +
+  theme(axis.text.x = element_blank(),
+        axis.ticks.x = element_blank()) +
+  theme(legend.position="bottom") +
+  labs(title=("Less (1) to complete (5) agreement"),
+       fill=NULL)
+
+slice(q57, 16:30)  %>% 
+  ggplot( aes(x=score, y=count, fill=score) ) +
+  geom_histogram(stat = "identity", position = "dodge") +
+  facet_grid(~Question) +
+  scale_fill_brewer(palette = "BuGn") +
+  theme(axis.text.x = element_blank(),
+        axis.ticks.x = element_blank()) +
+  theme(legend.position="bottom") +
+  labs(title=("Less (1) to complete (5) agreement"),
+       fill=NULL)
+```
+
+In this question, students show that they have a good relationship with their supervisors overall. They feel supported by them, comfortable enough to bring up difficult questions and feel that they have their best interests in mind. 
+
+# Funding
+
+The following questions contain information about the funding received by students
+Unfortunately, most of the answers are open ended and need to be re-codified somehow or summarized in any other way.
+
+```{r}
+questions_guide %>% 
+  slice(c(45,74)) %>% 
+  view()
+```
+
+### Q20: What average range of funding (CAD$) have you been receiving considering external funds combined?
+
+```{r}
+survey1 %>% 
+  count(Q20) %>% 
+  mutate(freq=n/82*100) %>% 
+  kable(digits=1)
+
+survey1 %>% 
+  filter(!is.na(Q20)) %>% 
+  ggplot(aes(x=Q20, fill=factor(Q20))) +
+  geom_bar() + 
+  labs(title="Range of funding received (n=61)",
+       y="Thousands of CAD/year")+
+  scale_fill_brewer(palette = "Dark2") +
+  facet_wrap(~Q17) +
+  theme(axis.text.x = element_text(angle = 90, size=9),
+        legend.position = "none",
+        axis.title.x = element_blank())
+
+
+survey1 %>% 
+  filter(!is.na(Q20)) %>% 
+  ggplot(aes(x=Q20, fill=factor(Q20))) +
+  geom_bar() + 
+  labs(title="Range of funding received (n=61)",
+       y="Thousands of CAD/year")+
+  scale_fill_brewer(palette = "Set1") +
+  facet_wrap(~Q18) +
+  theme(axis.text.x = element_text(angle = 90, size=9),
+        legend.position = "none",
+        axis.title.x = element_blank())
+```
+
+The most frequent category selected for average funding receives is 20k-30k/year (36 43.9%), a similar number of participants responded >30k/year (11, 13.4%) and 18k-20k/year (10, 12.2%). Less than 5% reported receiving less than 18k/year. 
+
+This overall distribution held when we separated the answers according to type of program and also by domestic/international status. However, PhD students do report receiving funding over 30k/year more frequently. 
+
+### Q27: How often do you worry about funding/financial support for your studies and living?
+
+```{r}
+survey1<- survey1 %>% 
+  mutate(
+    Q27= factor(Q27,
+                levels = c("Never" , "Sometimes", "About half the time", "Most of the time", "Always"))
+  )
+
+survey1 %>% 
+  filter(!is.na(Q27)) %>% 
+  ggplot(aes(x=Q27, fill=factor(Q27))) +
+  geom_bar() + 
+  labs(title="How often do you worry about funding (n=61)",
+       y="Counts")+
+  scale_fill_brewer(palette = "Dark2") +
+  facet_wrap(~Q17) +
+  theme(axis.text.x = element_text(angle = 90, size=9),
+        legend.position = "none",
+        axis.title.x = element_blank())
+
+survey1 %>% 
+  filter(!is.na(Q27)) %>% 
+  ggplot(aes(x=Q27, fill=factor(Q27))) +
+  geom_bar() + 
+  labs(title="Range of funding received (n=61)",
+       y="Thousands of CAD/year")+
+  scale_fill_brewer(palette = "Set1") +
+  facet_wrap(~Q18) +
+  theme(axis.text.x = element_text(angle = 90, size=9),
+        legend.position = "none",
+        axis.title.x = element_blank())
+```
+
+According to the distribution, we see that international students tend to worry more often about funding compared to domestic ones. According to type of program, MSc seem to have less financial worries as the most common answer among this group was 'sometimes' compared to 'always' for the doctoral students. 
+
+### Q53: To which funding opportunities have you applied to?
+
+![qualtrics_image_bars](qualtrics_images/funding_applied.png)
+The most common funding schemes that students applied for are supervisor funding, faculty of medicine graduate awards and CGS (M/D) scholarships. 
+
+![qualtrics_image_bars](qualtrics_images/funding_received.png)
+
+
+These same funding opportunities were the ones more commonly awarded according to student answers. 
+
+# Impact of COVID-19 and wellbeing
+
+### Q77 - The COVID19 pandemic has affected my overall mood and mental well being?
+
+```{r}
+# reorder levels and add an explicit NA
+survey1$Q77 <- 
+  factor(survey1$Q77,
+         levels=c("Strongly disagree","Disagree","Neutral","Agree","Strongly agree")) 
+
+survey1 %>% 
+ggplot(aes(x=Q77, fill=Q77) ) +
+  geom_bar() +
+  scale_fill_brewer(palette = "OrRd") +
+  theme(axis.text.x = element_blank(),
+        axis.ticks.x = element_blank()) +
+  theme(legend.position="bottom") +
+  labs(title="The COVID19 pandemic has affected my overall mood and mental well being?",
+       x="", 
+       fill="")
+
+```
+
+As expected, most students agree with the statement that the pandemic has affected their overall wellbeing. In contrast, the impact of the pandemic is not that great in their academic performance and education, as we will see shortly.
+
+### Q67 - Series of questions about impact of covid in education
+
+We asked several questions about the impact of the pandemic on several aspects of the training, responders scored between __1: No agreement__ and __5: Complete agreement__
+
+```{r}
+q67 <-  read_csv(file = "q67_pandemic_experience.csv") %>% 
+  pivot_longer(
+    cols = -c(Question, Total),
+    names_to = "score",
+    values_to = "count"
+  ) 
+slice(q67, 1:15) %>% 
+  ggplot( aes(x=score, y=count, fill=score) ) +
+  geom_histogram(stat = "identity", position = "dodge") +
+  facet_grid(~Question) +
+  scale_fill_brewer(palette = "OrRd") +
+  theme(axis.text.x = element_blank(),
+        axis.ticks.x = element_blank()) +
+  labs(fill="1: no agreement, 
+5: complete agreement") +
+  theme(legend.position="bottom")
+
+slice(q67, 16:30) %>% 
+  ggplot( aes(x=score, y=count, fill=score) ) +
+  geom_histogram(stat = "identity", position = "dodge") +
+  facet_grid(~Question) +
+  scale_fill_brewer(palette = "OrRd") +
+  theme(axis.text.x = element_blank(),
+        axis.ticks.x = element_blank()) +
+  labs(fill="1: no agreement, 
+5: complete agreement") +
+  theme(legend.position="bottom")
+
+```
+
+We can see that our sample agrees almost completely that the pandemic had some kind of impact in their education, as shown in the 4th graph. Also, responders tend to agree that the workload has changes during the pandemic. In all other responses, there is an even distribution of agreement about the statements. 
+
+
+### Q55 - The following question asks about well-being, mental-health and academic resources available at UBC
+
+__Resources known by the students__
+
+In the following 2 graphs, we have divided the most common resources available for UBC students and show the number of students that have heard about them. 
+
+![resources_known1](qualtrics_images/known_resources_1.png)
+
+![resources_known2](qualtrics_images/known_resources_2.png)
+From these graphs we can see that the most well-known resources to students in our program are UBC counselling, UBC health services, Library research commons and the workshops provided by G+PS. Resources for sexual violence or sexual assault are widely unknown according to the survey. Also, the less known service is the mistreatment office of the faculty of medicine. 
+
+__Evaluation of services__
+
+Students also provided their level of satisfaction for the services that they have used. Here, we show the results for the 4 resources most commonly used. 
+
+```{r}
+q55 <-  read_csv(file = "q55_evaluation_resources_used.csv") %>% 
+  pivot_longer(
+    cols = -c(Question, Total),
+    names_to = "score",
+    values_to = "count"
+  ) %>% 
+  mutate(score=factor(score,
+                      levels = c("Extremely Dissatisfied", "Somewhat Dissatisfied", 
+                                 "Neither", "Somewhat Satisfied", "Extremely Satisfied")))
+ggplot( data=q55, aes(x=score, y=count, fill=score) ) +
+  geom_histogram(stat = "identity", position = "dodge") +
+  facet_grid(~Question) +
+  scale_fill_brewer(palette = "BuGn") +
+  theme(axis.text.x = element_blank(),
+        axis.ticks.x = element_blank()) +
+  theme(legend.position="bottom")
+```
+
+The most used resources are the UBC student health services (n=23), the Library research commons (n=18), UBC counselling (n=17) and G+PS workshops (n=16). Among them, the histograms show that the users are mostly satisfied for all but UBC counselling. There may be some increased demand due to the pandemic, but it may be interesting to explore why?
+
+### Q61 - We are interested in hearing about how you are doing/feeling in the program.
+
+In this question, students ranked how much they agreed with every statement with __1: no agreement__ and __5:complete agreement__
+
+```{r}
+q61<- read_csv(file = "q61_feeling_program.csv") %>%
+  pivot_longer(
+    cols = -c(Question, Total),
+    names_to = "score",
+    values_to = "count"
+  )
+
+# plot first 3 questions 
+slice(q61, 1:15)  %>% 
+  ggplot( aes(x=score, y=count, fill=score) ) +
+  geom_histogram(stat = "identity", position = "dodge") +
+  facet_grid(~Question) +
+  scale_fill_brewer(palette = "BuGn") +
+  theme(axis.text.x = element_blank(),
+        axis.ticks.x = element_blank()) +
+  theme(legend.position="bottom") +
+  labs(fill=("Less (1) to 
+complete (5) agreement"))
+
+# plot remaining ones
+slice(q61, 16:30)  %>% 
+  ggplot( aes(x=score, y=count, fill=score) ) +
+  geom_histogram(stat = "identity", position = "dodge") +
+  facet_grid(~Question) +
+  scale_fill_brewer(palette = "BuGn") +
+  theme(axis.text.x = element_blank(),
+        axis.ticks.x = element_blank()) +
+  theme(legend.position="bottom") +
+  labs(fill=("Less (1) to 
+complete (5) agreement"))
+
+slice(q61, 31:40)  %>% 
+  ggplot( aes(x=score, y=count, fill=score) ) +
+  geom_histogram(stat = "identity", position = "dodge") +
+  facet_grid(~Question) +
+  scale_fill_brewer(palette = "BuGn") +
+  theme(axis.text.x = element_blank(),
+        axis.ticks.x = element_blank()) +
+  theme(legend.position="bottom") +
+  labs(fill=("Less (1) to 
+complete (5) agreement"))
+  
+```
+
+Overall, responders feel confident to approach setbacks and feel capable of completing the program successfully. Where we see less grouping around positive answers is in feeling supported by faculty members and not feeling discouraged by setbacks. 
+
+# Bullying and harrassment
+
+### Q78 - Have you ever experienced bullying and harassment by a faculty member in the ExMED program?
+
+```{r}
+survey1<- survey1 %>% 
+  mutate(
+    Q78=case_when(
+      Q78=="no, I have not experienced bullying and harassment" ~ "no",
+      is.na(Q78) ~ "NA",
+      TRUE ~"yes"))
+
+survey1 %>% 
+  count(Q78) %>% 
+  mutate(freq=n/82*100) %>%
+  rename("experienced_bullying?"="Q78") %>% 
+  kable(digits=2)
+
+```
+
+The disclosure of bullying and harrassment was low, worth to explore as this was one of the resources that were highly unknown by the student sample. A significant portion (7, 8.54%) of all respondents have evidenced one of these episodes. 
+
+### Q79 - Have you ever experienced bullying and harassment by a non-faculty member (i.e. student or staff) in the ExMED program whether it be in the classroom or your lab? 
+
+
+```{r}
+survey1 %>% 
+  mutate(
+    Q79=case_when(
+      Q79=="no, I have not experienced bullying and harassment" ~ "no",
+      is.na(Q79) ~ NA_character_,
+      TRUE ~"yes")) %>% 
+  count(Q79) %>% 
+  mutate(freq=n/82*100) %>%
+  rename("non-faculty bullying?"="Q79") %>% 
+  kable(digits=2)
+```
+
+The percentage of responders that have experienced bullying by someone other than a member of the faculty in the program is pretty low. Less than 5%.
+
+### Q80 - If you have experienced bullying and harassment, did you notify someone in a leadership position about the bullying and/or harassment? & Q81 - Were you satisfied with how the bullying and/or harassment grievance was resolved? 
+
+```{r}
+survey1 %>% 
+  mutate(
+    Q80=case_when(
+      Q80=="No, I did not notify anyone" ~ "no",
+      is.na(Q80) ~ NA_character_,
+      TRUE ~"yes")) %>% 
+  count(Q80) %>% 
+  mutate(freq=n/82*100) %>%
+  rename("notified to a leader?"="Q80") %>% 
+  kable(digits=2)
+
+survey1  %>% 
+  mutate(
+    Q81=case_when(
+      Q81=="No (provide details below)" ~ "No",
+      Q81=="Somewhat (provide details below)" ~ "Somewhat",
+      Q81=="Yes (provide details below)" ~ "Yes",
+      is.na(Q81) ~ NA_character_),
+    Q81=factor(Q81, 
+               levels = c("No","Somewhat","Yes"))) %>%
+  count(Q81)  %>% 
+  drop_na() %>% 
+  ggplot(aes(x=Q81, y=n, fill=Q81 )) +
+  geom_bar(stat="identity") +
+  theme (legend.position = "none") +
+  labs (title="Satisfied with resolution of bullying/harrassment?",
+        y="",
+        x="") +
+  scale_fill_brewer(palette = "Spectral")
+
+```
+
+In the cases were someone experienced bullying (n=12) only 5 reported the fact to an authority figure. Furthermore, as we see in the barplot, the resolution of the cases was not satisfactory at least from the point of view of the implicated students. 
