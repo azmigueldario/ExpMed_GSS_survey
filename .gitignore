@@ -43,5 +43,5 @@ vignettes/*.pdf
 *.csv
 *.xls
 *.xlsx
-*.html
 *.png
+/input
