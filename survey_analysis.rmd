@@ -26,9 +26,6 @@ body {text-align: justify}
 </style>
 
 --- 
-```
-knitr::opts_chunk$set(echo = F, warning = F, message = F, eval=T, fig.align = 'center')
-```
 
 # Introduction
 
@@ -46,7 +43,8 @@ We also  extract a list of variable descriptions for our reference and create a 
 library(tidyverse)
 library(qualtRics)
 library(kableExtra)
-library(rlang)
+library(ggpubr)
+library(ggsci)
 ```
 
 ```{r, results='hide'}
@@ -72,78 +70,107 @@ questions_guide<- extract_colmap(survey1) %>%
 glimpse(questions_guide)
 ```
 
-```{r, include=FALSE}
-# produces a frequency table (kbl formatted) with n and frequencies
-
-kbl_count_wrapper <- function (data, var, total=82) {
+```{r, include=FALSE, results='hide'}
+#######################  frequency table 
+count_wrapper <- function (data, var, total=82) {
   count(data, {{var}}) %>% 
-    mutate(freq=n/total*100) %>%
-  kbl(., format="html", align = c("lcccc"), row.names = NA, digits=2) %>%
-    kable_styling(font_size = 25, bootstrap_options = "striped",  full_width = F) %>% 
-    kable_classic()
+    mutate(freq=n/total*100) 
 }
-
-
+#######################  formatted html kbl 
 formatted_kbl <- function (data, colnames=NA) {
   kbl(data, format="html", align = c("lcccc"), row.names = NA, digits=2, col.names = colnames) %>%
     kable_styling(font_size = 25, bootstrap_options = "striped",  full_width = F) %>%
     kable_classic()
-  }
-
-```
-
-
-```{r, geom_bar wrapper, include=FALSE, results='hide'}
-
-geom_bar_wrapper <- function (data, x=Q72, group=Q17, 
-                              plot.title="title", x.title="", 
-                              facet_label="top", palette="red") 
-  {
-plot<-  ggplot(data, aes(x={{x}},fill=as.factor({{group}}))) + geom_bar()
-plot <-  plot +  facet_wrap(vars({{group}}), scales = "free_x", strip.position=facet_label)
-plot <-  plot +labs(title=plot.title,
-                    fill="Graduate program",
-                    x=x.title,
-                    y="")
-plot <-  plot + labs(title=plot.title,
-                     fill="Graduate program",
-                     x=x.title,
-                     y="")
-plot <-  plot +  theme(axis.text.x = element_text(angle = 90),
-                       plot.title = element_text(size=16, hjust=0.5),
-                       panel.background = element_blank(),
-                       strip.text.x = element_text(size = 10),
-                       legend.position = "none")
-
-if (palette=="green")
+}
+#######################  formatted faceted bar plot
+grouped_bar_wrapper <- function (data, x, group, 
+                                 plot.title="", x.title="", 
+                                 facet_label="top", palette="red") 
+{
+  plot<-  ggplot(data, 
+                 aes(x={{x}},fill=as.factor({{group}}))) + 
+    geom_bar()
+  plot <-  plot +  facet_wrap(vars({{group}}), 
+                              scales = "free_x", 
+                              strip.position=facet_label)
+  plot <-  plot +labs(title=plot.title,
+                      fill="Graduate program",
+                      x=x.title,
+                      y="")
+  plot <-  plot +  theme(axis.text.x = element_text(angle = 90),
+                         plot.title = element_text(size=16, hjust=0.5),
+                         panel.background = element_blank(),
+                         strip.text.x = element_text(size = 10),
+                         legend.position = "none")
+  # Conditional fill colors
+  if (palette=="green")
   {plot + scale_fill_manual(values=c("darkorchid4", "forestgreen"))}
-else if (missing(palette))
+  else 
   {plot + scale_fill_manual(values=c("darkcyan","brown3"))}
 }
-
+####################### formatted single col plot --> imported questions
+single_col_wrapper <-  function(data, x.var, n, title="") {
+  plot <- ggplot(data=data, 
+                 aes(x={{x.var}}, y={{n}}, fill=factor({{x.var}})))
+  plot <- plot + geom_col() +
+    labs(title=title, 
+         x="", 
+         y="")
+  plot <- plot + scale_fill_nejm()
+  plot <- plot + theme(plot.title = element_text(size=16, hjust=0.5),
+                       panel.background = element_blank(),
+                       legend.position = "none",
+                       axis.text.x = element_text(angle=45, vjust=0.5),
+                       axis.line = element_line(colour = "black"))
+  plot
+}
+####################### formatted histogram
+geom_hist_wrapper <-  function(data, x.var, y.var=n, 
+                               palette="BuGn", title="", facet_label="top",
+                               rev_palette=F) {
+  
+  colors<- RColorBrewer::brewer.pal(9, palette)[3:9] 
+  # reverse=T determines if we reverse the color palette
+  if (rev_palette==T) {colors <- rev(colors)}
+  else {colors <- colors}
+  plot <- ggplot(data, 
+                 aes(x={{x.var}}, y={{y.var}}, fill={{x.var}})) +
+    geom_histogram(stat = "identity", position = "dodge") 
+  plot <- plot + scale_fill_manual(values = colors) 
+  plot <- plot + theme(axis.text.x = element_blank(),
+                       axis.ticks.x = element_blank(),
+                       legend.position="right",
+                       strip.text.x = element_text(size = 10),
+                       plot.title = element_text(size=16, hjust=0.5),
+                       legend.title = element_blank(),
+                       panel.background = element_blank(),
+                       legend.text = element_text(size = 8)
+  )
+  plot + labs(title=title,
+              x="",
+              y="")
+}
 ```
 
 
 # Demographic data summary
 
 In this section we will explore the global characteristics of respondents in our ExpMed  cohort. 
-
 - We had a response rate  of  **41% (82/197)** based on the registered Experimental Medicine students for Spring 2021. Among responders, **74.4%** answered all the questions
 
 ```{r, echo=FALSE}
 survey %>% 
   mutate(Progress=case_when(Progress<100 ~ "Partially complete", 
                             TRUE~ "Fully complete")) %>%
-  kbl_count_wrapper(. , var=Progress)
+  count_wrapper(. , var=Progress) %>% 
+  formatted_kbl()
 ```
 
 ### Type of graduate program and student type 
 
 We see that PhD and MSc responders are in their majority domestic: 84.8 vs 15.2% in MSc program and 65.9% vs 34.1% in the PhD program. Also, we had a higher rate of PhD responders (55.4%) compared to MSc students (44.6%).
-In particular, most of the MSc responders 
 
-```{r, include=FALSE}
-
+```{r}
 count(survey1, Q17) %>% 
   mutate(freq=n/82*100) %>% 
   formatted_kbl(., colnames = c("Program", "n", "%"))
@@ -170,65 +197,28 @@ survey1<- survey1 %>%
 # levels(survey1$Q72)
 ```
 
-__MSc vs PhD__
-
 Most of the MSc responders are in the first 2 years of the degree (as expected) and PhD respondents are mostly in their second to fourth year of the program. Thus, early PhD students are probably not represented in the sample. 
 
-```{r, geom_bar wrapper, include=FALSE, results='hide'}
-
-geom_bar_wrapper <- function (data, x=Q72, group=Q17, 
-                              plot.title="title", x.title="", 
-                              facet_label="top", palette="red") 
-  {
-plot<-  ggplot(data, aes(x={{x}},fill=as.factor({{group}}))) + geom_bar()
-plot <-  plot +  facet_wrap(vars({{group}}), scales = "free_x", strip.position=facet_label)
-plot <-  plot +labs(title=plot.title,
-                    fill="Graduate program",
-                    x=x.title,
-                    y="")
-plot <-  plot + labs(title=plot.title,
-                     fill="Graduate program",
-                     x=x.title,
-                     y="")
-plot <-  plot +  theme(axis.text.x = element_text(angle = 90),
-                       plot.title = element_text(size=16, hjust=0.5),
-                       panel.background = element_blank(),
-                       strip.text.x = element_text(size = 10),
-                       legend.position = "none")
-
-if (palette=="green")
-  {plot + scale_fill_manual(values=c("darkorchid4", "forestgreen"))}
-else if (missing(palette))
-  {plot + scale_fill_manual(values=c("darkcyan","brown3"))}
-}
-
-survey1 %>% 
-  filter(!is.na(Q17)) %>%  
-  geom_bar_wrapper(palette="green")
-```
-
-
 ```{r}
-filter(survey1, !is.na(Q17)) %>% 
-  geom_bar_wrapper(plot.title ="Year in ExpMed graduate program (n=74)")
+plots <- list()
+plots$year1 <- filter(survey1, !is.na(Q17)) %>% 
+  grouped_bar_wrapper(group=Q17, facet_label="right", x=Q72)
 ```
-
-__Domestic vs international__
 
 If we separate the results in International vs Domestic, most international students are in year 2 or beyond. Which is expected based on the public health situation limiting start of international students. 
 
 ```{r, echo=FALSE}
-filter(survey1, !is.na(Q18)) %>% 
-  geom_bar_wrapper(plot.title ="Year in ExpMed graduate program (n=74)",
-                   group=Q18,
+plots$year2 <-  filter(survey1, !is.na(Q18)) %>% 
+  grouped_bar_wrapper(x=Q72, group=Q18, facet_label="right",
                    palette = "green")
+
+ggarrange(plots$year1, plots$year2,
+          nrow = 2) %>% 
+  annotate_figure(top=text_grob("Year in ExpMed graduate program (n=74)",
+                                size=16, face="bold"))
 ```
 
-```{r setup, include=FALSE}
-knitr::opts_chunk$set(echo = F, eval=F)
-```
-
-### Q62: start date
+### Program start date
 
 In this plot, we see the date of start in the X axis and the count of students in the Y-axis. Most of the MSc responders started in or after 2019. In contrast, start dates of PhD students are more evenly distributed.
 
@@ -252,300 +242,232 @@ survey1 %>%
 
 The following questions report student satisfaction with the program and will be summarized by graduate program and international status. 
 
-```{r, include=FALSE}
+```{r, eval=F}
 # utils::View(questions_guide)
 questions_guide %>% 
   slice(18:38) %>% 
   view()
 ```
 
-### Q4: How reasonable or unreasonable is the tuition cost at this university?
+### How reasonable or unreasonable is the tuition cost at this university?
 
 In general, both MSc and Phd students found the tuition fees to be between somewhat reasonable, somewhat unreasonable and neither reasonable or unreasonable. 
 
 Domestic students showed a tendency to find the tuition somewhat reasonable as shown in the graph (45.4%). 
 ```{r}
-#############################
+# By program
+plots$tuition1<- filter(survey1, !is.na(Q4)) %>% 
+  count(Q4, Q17) %>%
+  mutate(Q4=fct_relevel(Q4, "Neither reasonable nor unreasonable", after = 2))  %>% 
+  geom_hist_wrapper(x.var = Q4, group = Q17)
+# By status
+plots$tuition2<-filter(survey1, !is.na(Q4)) %>% 
+  count(Q4, Q18) %>%
+  mutate(Q4=fct_relevel(Q4, "Neither reasonable nor unreasonable", after = 2))  %>% 
+  geom_hist_wrapper(x.var = Q4, group = Q18)
 
-survey1 %>% 
-  count(Q4) %>% 
-  mutate(freq=n*82/100) %>% 
-  kable(format = "simple")
-
-#############################
-
-survey1 %>% 
-  filter(!is.na(Q17)) %>% 
-  ggplot(aes(x=Q4, fill=as.factor(Q17))) +
-  geom_bar() + 
-  labs(title="Thoughts about the tuition according to program (n=74)")+
-  facet_wrap(~Q17) +
-  scale_fill_brewer(palette = "Dark2") +
-  theme(axis.text.x = element_text(angle = 90, size=10),
-        legend.position = "none",
-        axis.title.x = element_blank())
-
-survey1 %>% 
-  filter(!is.na(Q18)) %>% 
-  ggplot(aes(x=Q4, fill=as.factor(Q18))) +
-  geom_bar() + 
-  labs(title="Thoughts about the tuition Domestic vs International (n=74)")+
-  facet_wrap(~Q18) +
-  scale_fill_brewer(palette = "Set1") +
-  theme(axis.text.x = element_text(angle = 90, size=10),
-        legend.position = "none",
-        axis.title.x = element_blank())
+#plots
+ggarrange(plots$tuition1, plots$tuition2,
+          common.legend = T) %>% 
+  annotate_figure(top = text_grob("How reasonable/unreasonable is the tuition", 
+                                  hjust=0.5, size=16, face = "bold"))
 ```
 
-### Q5: Overall, how satisfied or dissatisfied are you with the ExMed program?
+### Overall, how satisfied or dissatisfied are you with the ExMed program?
 
 The most common responses of satisfaction with the program were in the categories of Somewhat satisfied and Neither satisfied nor disatisfied. This distribution did not change according to domestic status or type of program
 
-```{r}
+```{r, fig.width=9}
+plots$satisf1 <- filter(survey1, !is.na(Q5)) %>%
+  count(Q5, Q17) %>% 
+  mutate(Q5=fct_relevel(Q5, "Extremely satisfied", after = 0)) %>% 
+  geom_hist_wrapper(x.var = Q5, group = Q17, 
+                    palette = "OrRd")
 
-table(Satisfaction=survey1$Q5, useNA = "always") %>% 
-  addmargins() %>% 
-  kable()
+plots$satisf2 <- filter(survey1, !is.na(Q5)) %>%
+  count(Q5, Q18) %>% 
+  mutate(Q5=fct_relevel(Q5, "Extremely satisfied", after = 0)) %>% 
+  geom_hist_wrapper(x.var = Q5, group = Q18, 
+                    palette = "OrRd")
 
-survey1 %>% 
-  filter(!is.na(Q17)) %>% 
-  ggplot(aes(x=Q5, fill=as.factor(Q17))) +
-  geom_bar() + 
-  labs(title="Satisfaction with the program (n=71)")+
-  facet_wrap(~Q17) +
-  scale_fill_brewer(palette = "Dark2") +
-  theme(axis.text.x = element_text(angle = 90, size=10),
-        legend.position = "none",
-        axis.title.x = element_blank())
+ggarrange(plots$satisf1, plots$satisf2,
+          common.legend = T) %>% 
+  annotate_figure(top = text_grob("How satisfied/dissatisfied are you with the ExMed program?", 
+                                  hjust=0.5, size=16, face = "bold"))
 
-survey1 %>% 
-  filter(!is.na(Q18)) %>% 
-  ggplot(aes(x=Q5, fill=as.factor(Q18))) +
-  geom_bar() + 
-  labs(title="Satisfaction with the program (n=71)")+
-  facet_wrap(~Q18) +
-  scale_fill_brewer(palette = "Set1") +
-  theme(axis.text.x = element_text(angle = 90, size=10),
-        legend.position = "none",
-        axis.title.x = element_blank())
 ```
 
-### Q6: How likely are you to recommend this program to students considering graduate school options?
+### How likely are you to recommend this program to students considering graduate school options?
 
 Interestingly, a majority of the students would not recommend the program to others (39%), while another 34% are neutral about recommending it. As we see in the plot, doctoral students were detractors of the program more frequently. 
 
 In the question about how likely, from 1 to 10, were you to recommend the program to someone else. The score of answers from PhD students was lower (median=6) compared to those from the MSc program (median=7). These differences are non-significative in a nonparametric test (p=0.71). The likelihood of recommending the program is similar between international and domestic students 
 
 ```{r}
-survey1 %>% 
-  count(Q6_NPS_GROUP) %>% 
-  mutate(freq=n/82*100) %>% 
-  kable()
+plots$recomend1<- 
+  filter(survey1, !is.na(Q6_NPS_GROUP)) %>%
+  mutate(Q6_NPS_GROUP=case_when(
+    Q6_NPS_GROUP=="Detractor" ~"Not likely",
+    Q6_NPS_GROUP=="Passive" ~"Neutral",
+    Q6_NPS_GROUP=="Promoter" ~"Likely")) %>% 
+  grouped_bar_wrapper(x=Q6_NPS_GROUP, group = Q17, facet_label = "right")
 
-survey1 %>% 
-  filter(!is.na(Q17)) %>% 
-  ggplot(aes(x=Q6_NPS_GROUP, fill=as.factor(Q17))) +
-  geom_bar() + 
-  labs(title="How likely to recommend the program (n=74)")+
-  facet_wrap(~Q17) +
-  scale_fill_brewer(palette = "Dark2") +
-  theme(axis.text.x = element_text(angle = 90, size=10),
-        legend.position = "none",
-        axis.title.x = element_blank())
+plots$recomend2<- 
+filter(survey1, !is.na(Q6_NPS_GROUP)) %>%
+  mutate(Q6_NPS_GROUP=case_when(
+    Q6_NPS_GROUP=="Detractor" ~"Not likely",
+    Q6_NPS_GROUP=="Passive" ~"Neutral",
+    Q6_NPS_GROUP=="Promoter" ~"Likely")) %>% 
+  grouped_bar_wrapper(x=Q6_NPS_GROUP, group = Q18, palette = "green", facet_label = "right")
 
-wilcox.test(survey1$Q6~survey1$Q17)
-
-
-survey1 %>% 
-  filter(!is.na(Q17)) %>% 
-  ggplot(aes(y=Q6, x=Q17, fill=as.factor(Q17))) +
-  geom_boxplot() + 
-  geom_jitter(color="black", size=1.7, alpha=0.9) +
-  labs(title="How likely to recommend the program (n=74)",
-       y="1-Less likely to 10- More likely")+
-  scale_fill_brewer(palette = "Dark2") +
-  theme(axis.text.x = element_text(angle = 90, size=10),
-        legend.position = "none",
-        axis.title.x = element_blank())
-
-survey1 %>% 
-  filter(!is.na(Q18)) %>% 
-  ggplot(aes(y=Q6, x=Q18, fill=as.factor(Q18))) +
-  geom_boxplot() + 
-  geom_jitter(color="black", size=1.7, alpha=0.9) +
-  labs(title="How likely to recommend the program (n=74)",
-       y="1-Less likely to 10- More likely")+
-  scale_fill_brewer(palette = "Set1") +
-  theme(axis.text.x = element_text(angle = 90, size=10),
-        legend.position = "none",
-        axis.title.x = element_blank())
+ggarrange(plots$recomend1, plots$recomend2,
+          common.legend = F, 
+          nrow=2) %>% 
+  annotate_figure(top = text_grob("How likely are you to recommend this program to students?", 
+                                  hjust=0.5, size=14, face = "bold"))
 ```
 
-
-### Q36: Did you attend an ExMed orientation?
+### Did you attend an ExMed orientation?
 
 51 out of 82 (51.2%) students attended an ExMed orientation. Only 23 (28%) explicitly stated that they did not attend an orientation meeting. 
 
-```{r, message=FALSE, warning=FALSE}
-#install.packages("waffle")
-library(waffle)
-```
-
-
 ```{r}
-survey1 %>% 
-  count(Q36) %>%
-  mutate(freq=n/82*100) 
-
-survey1 %>%
-  count(Q36, sort = T) %>%
-  mutate(Q36=fct_explicit_na(Q36)) %>% 
-  ggplot(aes(fill=Q36, values=n)) +
-  geom_waffle(n_rows = 9,
-              size = 1.5, 
-              colour = "white") +
-  labs(title="Did you attend and ExpMed orientation?") +
-  scale_fill_manual(name = NULL,
-                    values = c("#FF8288", "#BA182A",  "#FFDBDD"),
-                    labels = c("No (28%)", "Yes (51.2%)",  "Missing (20.7%)")) +
-  coord_equal() +
-  theme_void()
+count_wrapper(survey1, Q36) %>% 
+  formatted_kbl(colnames=c("Did you attend an ExMed orientation?",
+                           "n", "%"))
 ```
 
-### Q71: How easy has it been to find information you need about processes and requirements of the program?
+### How easy has it been to find information you need about processes and requirements of the program?
 
 In general, students answered that finding information about the program was somewhat easy. However, 12 (14.6%) of responders manifested that this process was somewhat difficult. 
 
 ```{r}
-survey1 %>% 
-  count(Q71) %>% 
-  mutate(freq=n/82*100)
-
-survey1 %>% 
-  filter(!is.na(Q71)) %>% 
-  ggplot(aes(x=Q71, fill=factor(Q71))) +
-  geom_bar() + 
-  labs(title="How easy to find information processes/program (n=65)")+
-  scale_fill_brewer(palette = "Dark2") +
-  theme(axis.text.x = element_text(angle = 90, size=10),
-        legend.position = "none",
-        axis.title.x = element_blank())
+ filter(survey1, !is.na(Q71))  %>%
+   mutate(Q71=fct_relevel(Q71, "Somewhat difficult", after=2),
+          Q71=fct_relevel(Q71, "Extremely easy", after=0)) %>% 
+   count(Q71) %>% 
+   geom_hist_wrapper(x.var=Q71, y.var = n, 
+                     title = "How easy has it been to find information about \nprocesses and requirements of the program?" )
 ```
 
-### Q28: What courses have you taken to meet your requirements? 
+### What courses have you taken to meet your requirements? 
 
 Most of the students took coursed from the faculty of medicine, particularly the mandatory courses (MEDI 501, MEDI 502 & thesis courses). Only ~9% of the answers are about courses not listed. Maybe there is an opportunity for students to diversify their curriculum according to their interests. 
 
-![qualtrics_image_bars](qualtrics_images/courses_taken_bars.png)
+```{r}
+q28 
+read_csv("./input/q28_courses.taken.csv") %>% 
+  filter(Answer!="Total") %>% 
+  mutate(course= case_when(Answer=="MEDI 501"~"MEDI 501",
+                           Answer=="MEDI 502"~"MEDI 502",
+                           Answer=="MEDI 503"~"MEDI 503",
+                           Answer=="Other courses (please specify)"~"non MEDI course",
+                           TRUE~"other in MEDI")) %>% 
+  group_by(course) %>% 
+  summarise(n=sum(Count),
+            freq=n/172*100)
 
-### Q34 : Were you able to register in all the courses you were interested in?
+q28 %>% formatted_kbl(colnames=c("Course taken to meet requirements", "n", "%")) 
+
+  
+q28 %>%
+  ggplot(aes(x=course, y=n, fill=factor(course))) + geom_col() +
+  labs(title="Courses taken to meet requirements", x="", y="") +
+  scale_fill_brewer(palette="Set1") +
+  theme(plot.title = element_text(size=16, hjust=0.5),
+        panel.background = element_blank(),
+        legend.position = "none",
+        axis.text.x = element_text(angle=45, vjust=0.5),
+        axis.line = element_line(colour = "black"))
+```
+
+
+### Were you able to register in all the courses you were interested in?
 
 ```{r}
-survey1 %>%
-  count(Q36, sort = T) %>%
-  mutate(freq=n/82*100)
 
 survey1 %>%
-  count(Q34) %>%
-  mutate(Q34=fct_explicit_na(Q34)) %>%
-  ggplot(aes(fill=Q34, values=n)) +
-  geom_waffle(n_rows = 9,
-              size = 1.5, 
-              colour = "white") +
-  labs(title="Able to register in desired courses?") +
-  scale_fill_manual(name = NULL,
-                    values = c("#BA182A", "#FF8288", "#FFDBDD"),
-                    labels = c("Yes (64.6%)", "No (13.4%)", "Missing (22%)")) +
-  coord_equal() +
-  theme_void()
+  count(Q36, sort = T) %>%
+  mutate(freq=n/82*100) %>% 
+  formatted_kbl(colnames=c("Able to register in desired courses?", "n", "%"))
+
 ```
 
 Most of the responders were able to register in their desired courses (64.6%). We could assume that there is enough availability of seats in the MEDI courses as these were the most popular ones among students.
 
-### Q35: What was your experience with registering in courses outside of MEDI? 
+### What was your experience with registering in courses outside of MEDI? 
 
 ```{r}
-table(how_easy=survey1$Q35, useNA = "always") %>% 
-  addmargins() %>% 
-  kable()
+survey1 %>% 
+  mutate(Q35=gsub(" \\(Please elaborate\\)", "", Q35)) %>% 
+  count(Q35) %>%
+  drop_na() %>% 
+  formatted_kbl(colnames=c("Experience registering courses outside of MEDI?","n"))
 
 ```
 
 Not a lot of answers (14) to make any interpretation. Most of the students probably did not have experience registering in courses outside of MEDI (68/82).
 
-### Q29: What was your overall satisfaction with the courses you took?
+### What was your overall satisfaction with the courses you took?
 
 ```{r}
-survey1 %>% 
-  filter(!is.na(Q29)) %>% 
-  ggplot(aes(x=Q29, fill=factor(Q29))) +
-  geom_bar() + 
-  labs(title="Satisfaction with courses taken? (n=61)")+
-  scale_fill_brewer(palette = "Dark2") +
-  theme(axis.text.x = element_text(angle = 90, size=10),
-        legend.position = "none",
-        axis.title.x = element_blank())
+
+filter(survey1, !is.na(Q29)) %>% 
+  mutate(Q29=fct_relevel(Q29, "Somewhat satisfied", after=1)) %>% 
+  count(Q29) %>% 
+  geom_hist_wrapper(x.var=Q29, y.var=n, rev_palette = T,
+                    title = "What was your overall satisfaction \nwith the courses you took? (n=61)") + theme(axis.line = element_line(colour = "black"))
 
 ```
 
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = F, eval=F,warning = F, 
+                      message = F, eval=F, fig.align = 'center', fig.width = 9)
+```
+
+
 As we have seen in previous questions, the bulk of the answers seem to gravitate between 'neutral' and 'somewhat satisfied' opinions. Unsatisfaction with the courses taken is low (n<15)
 
-### Q33: Do you feel that there should be more MEDI electives, i.e. courses that are not MEDI 501/502/503?
+### Do you feel that there should be more MEDI electives?
 
 ```{r}
-table(more_MEDI_electives=survey1$Q33, useNA = "always") %>% 
-  addmargins() %>% 
-  kable()
-
-survey1 %>%
-  count(Q33) %>%
-  mutate(Q33=fct_explicit_na(Q33)) %>%
-  ggplot(aes(fill=Q33, values=n)) +
-  geom_waffle(n_rows = 9,
-              size = 1.5, 
-              colour = "white") +
-  labs(title="Do you feel that there should be more MEDI electives?") +
-  scale_fill_manual(name = NULL,
-                    values = c("#BA182A", "#FF8288", "#FFDBDD"),
-                    labels = c("Yes (57.3%)", "No (18.3%)", "Missing (24.4%)")) +
-  coord_equal() +
-  theme_void()
+count_wrapper(survey1, Q33) %>% 
+  formatted_kbl(colnames = c("Do you feel that there should be more MEDI electives?",
+                             "n", "%"))
 ```
 
 In general, students desire more elective courses from the faculty of Medicine. It could be interesting to follow-up with an initiative about what kind of courses. Maybe voting for broad categories (qualitative research, bioinformatics, public health, health economics, etc.)
 
-### Q57 - We are interested in hearing about your relationship with your supervisor
+### We are interested in hearing about your relationship with your supervisor
 
-```{r}
-q57<- read_csv(file = "Q57_supervisor_relationship.csv") %>%
+```{r, fig.height=10}
+q57<- read_csv(file = "./input/q57_supervisor_relationship.csv") %>%
   pivot_longer(
     cols = -c(Question, Total),
     names_to = "score",
-    values_to = "count"
-  )
-
+    values_to = "count") %>% 
+  # add new lines to improve plots
+   mutate(Question=gsub("invested","invested\n", Question),
+          Question=gsub("going to","going to\n", Question), 
+          Question=gsub("feedback","feedback\n", Question), 
+          Question=gsub("relationship","relationship\n", Question),
+          score=gsub("1", "1 - No agreement", score),
+          score=gsub("5", "5 - Complete agreement", score))
 # plot first 3 questions 
-slice(q57, 1:15)  %>% 
-  ggplot( aes(x=score, y=count, fill=score) ) +
-  geom_histogram(stat = "identity", position = "dodge") +
-  facet_grid(~Question) +
-  scale_fill_brewer(palette = "BuGn") +
-  theme(axis.text.x = element_blank(),
-        axis.ticks.x = element_blank()) +
-  theme(legend.position="bottom") +
-  labs(title=("Less (1) to complete (5) agreement"),
-       fill=NULL)
+plots$super1 <-  slice(q57, 1:15)  %>%  
+  geom_hist_wrapper(x.var = score, y.var=count) + 
+  facet_wrap(~Question, strip.position = "right")  +
+  theme(legend.text = element_text(size=8))
+# plot remaining ones
+plots$super2 <- slice(q57, 16:30)  %>%
+  geom_hist_wrapper(x.var = score, y.var=count) + 
+  facet_wrap(~Question, strip.position = "right") +
+  theme(legend.text = element_text(size=8))
 
-slice(q57, 16:30)  %>% 
-  ggplot( aes(x=score, y=count, fill=score) ) +
-  geom_histogram(stat = "identity", position = "dodge") +
-  facet_grid(~Question) +
-  scale_fill_brewer(palette = "BuGn") +
-  theme(axis.text.x = element_blank(),
-        axis.ticks.x = element_blank()) +
-  theme(legend.position="bottom") +
-  labs(title=("Less (1) to complete (5) agreement"),
-       fill=NULL)
+ggarrange(plots$super1, plots$super2, 
+          nrow=2, 
+          common.legend = T, legend="right") %>% 
+  annotate_figure(top = text_grob("Relationship with supervisor(s)", face="bold", size=16))
 ```
 
 In this question, students show that they have a good relationship with their supervisors overall. They feel supported by them, comfortable enough to bring up difficult questions and feel that they have their best interests in mind. 
@@ -555,99 +477,83 @@ In this question, students show that they have a good relationship with their su
 The following questions contain information about the funding received by students
 Unfortunately, most of the answers are open ended and need to be re-codified somehow or summarized in any other way.
 
-```{r}
+```{r, eval=FALSE}
 questions_guide %>% 
   slice(c(45,74)) %>% 
   view()
 ```
 
-### Q20: What average range of funding (CAD$) have you been receiving considering external funds combined?
+### What average range of funding (CAD$) have you been receiving considering external funds combined?
 
 ```{r}
-survey1 %>% 
-  count(Q20) %>% 
-  mutate(freq=n/82*100) %>% 
-  kable(digits=1)
+plots$fund1 <- 
+  filter(survey1, !is.na(Q20)) %>%
+  mutate(Q20=fct_relevel(Q20, "Over $30,000 per year", after=0))%>%
+  count(Q20, Q17) %>% 
+  geom_hist_wrapper(x.var = Q20, y.var=n, palette = "YlOrRd") +
+  facet_wrap(~Q17)
 
-survey1 %>% 
-  filter(!is.na(Q20)) %>% 
-  ggplot(aes(x=Q20, fill=factor(Q20))) +
-  geom_bar() + 
-  labs(title="Range of funding received (n=61)",
-       y="Thousands of CAD/year")+
-  scale_fill_brewer(palette = "Dark2") +
-  facet_wrap(~Q17) +
-  theme(axis.text.x = element_text(angle = 90, size=9),
-        legend.position = "none",
-        axis.title.x = element_blank())
+plots$fund2 <- 
+  filter(survey1, !is.na(Q20)) %>%
+  mutate(Q20=fct_relevel(Q20, "Over $30,000 per year", after=0))%>%
+  count(Q20, Q18) %>% 
+  geom_hist_wrapper(x.var = Q20, y.var=n, palette = "YlOrRd") +
+  facet_wrap(~Q18)
 
-
-survey1 %>% 
-  filter(!is.na(Q20)) %>% 
-  ggplot(aes(x=Q20, fill=factor(Q20))) +
-  geom_bar() + 
-  labs(title="Range of funding received (n=61)",
-       y="Thousands of CAD/year")+
-  scale_fill_brewer(palette = "Set1") +
-  facet_wrap(~Q18) +
-  theme(axis.text.x = element_text(angle = 90, size=9),
-        legend.position = "none",
-        axis.title.x = element_blank())
+ggarrange(plots$fund1, plots$fund1, 
+          nrow=2,
+          common.legend = T, legend = "right") %>% 
+  annotate_figure(top=text_grob("What average range of funding (CAD$)\nhave you been receiving", size = 16))
 ```
 
 The most frequent category selected for average funding receives is 20k-30k/year (36 43.9%), a similar number of participants responded >30k/year (11, 13.4%) and 18k-20k/year (10, 12.2%). Less than 5% reported receiving less than 18k/year. 
 
 This overall distribution held when we separated the answers according to type of program and also by domestic/international status. However, PhD students do report receiving funding over 30k/year more frequently. 
 
-### Q27: How often do you worry about funding/financial support for your studies and living?
+### How often do you worry about funding/financial support for your studies and living?
 
 ```{r}
 survey1<- survey1 %>% 
   mutate(
-    Q27= factor(Q27,
-                levels = c("Never" , "Sometimes", "About half the time", "Most of the time", "Always"))
-  )
+    Q27= factor(Q27,levels = c("Never","Sometimes","About half the time",
+                               "Most of the time","Always"))
+    )
 
-survey1 %>% 
-  filter(!is.na(Q27)) %>% 
-  ggplot(aes(x=Q27, fill=factor(Q27))) +
-  geom_bar() + 
-  labs(title="How often do you worry about funding (n=61)",
-       y="Counts")+
-  scale_fill_brewer(palette = "Dark2") +
-  facet_wrap(~Q17) +
-  theme(axis.text.x = element_text(angle = 90, size=9),
-        legend.position = "none",
-        axis.title.x = element_blank())
 
-survey1 %>% 
-  filter(!is.na(Q27)) %>% 
-  ggplot(aes(x=Q27, fill=factor(Q27))) +
-  geom_bar() + 
-  labs(title="Range of funding received (n=61)",
-       y="Thousands of CAD/year")+
-  scale_fill_brewer(palette = "Set1") +
-  facet_wrap(~Q18) +
-  theme(axis.text.x = element_text(angle = 90, size=9),
-        legend.position = "none",
-        axis.title.x = element_blank())
+  count(survey1, Q27)
+
+filter(survey1, !is.na(Q27)) %>%
+  count(Q27) %>% 
+  geom_hist_wrapper(x.var = Q27, y.var=n, palette = "YlOrRd", 
+                    title = "How often do you worry about funding/financial support\nfor your studies and living?") +
+  theme(axis.line = element_line(colour = "black"))
+
+
 ```
 
 According to the distribution, we see that international students tend to worry more often about funding compared to domestic ones. According to type of program, MSc seem to have less financial worries as the most common answer among this group was 'sometimes' compared to 'always' for the doctoral students. 
 
 ### Q53: To which funding opportunities have you applied to?
 
-![qualtrics_image_bars](qualtrics_images/funding_applied.png)
 The most common funding schemes that students applied for are supervisor funding, faculty of medicine graduate awards and CGS (M/D) scholarships. 
 
-![qualtrics_image_bars](qualtrics_images/funding_received.png)
-
+```{r}
+full_join(read_csv("./input/q53_funding.applied.csv"),
+          read_csv("./input/q53_funding.received.csv"),
+          by="Question")  %>% 
+  mutate(Question=gsub(" \\(.*", "", Question),
+         "% received"=(.[[3]]/.[[2]])) %>% 
+  rename("Opportunity"=1,
+         "Applied"=2,
+         "Received"=3) %>% 
+  formatted_kbl()
+```
 
 These same funding opportunities were the ones more commonly awarded according to student answers. 
 
 # Impact of COVID-19 and wellbeing
 
-### Q77 - The COVID19 pandemic has affected my overall mood and mental well being?
+### The COVID19 pandemic has affected my overall mood and mental well being?
 
 ```{r}
 # reorder levels and add an explicit NA
@@ -655,91 +561,82 @@ survey1$Q77 <-
   factor(survey1$Q77,
          levels=c("Strongly disagree","Disagree","Neutral","Agree","Strongly agree")) 
 
-survey1 %>% 
-ggplot(aes(x=Q77, fill=Q77) ) +
-  geom_bar() +
-  scale_fill_brewer(palette = "OrRd") +
-  theme(axis.text.x = element_blank(),
-        axis.ticks.x = element_blank()) +
-  theme(legend.position="bottom") +
-  labs(title="The COVID19 pandemic has affected my overall mood and mental well being?",
-       x="", 
-       fill="")
-
+filter(survey1, !is.na(Q77)) %>% 
+  count(Q77) %>% 
+  geom_hist_wrapper(
+    x.var = Q77, palette = "YlOrRd", 
+    title="The COVID19 pandemic has affected\nmy overall mood and mental well being?") +
+  theme(axis.line = element_line(colour = "black"))
 ```
 
 As expected, most students agree with the statement that the pandemic has affected their overall wellbeing. In contrast, the impact of the pandemic is not that great in their academic performance and education, as we will see shortly.
 
-### Q67 - Series of questions about impact of covid in education
+### Impact of covid in education
 
 We asked several questions about the impact of the pandemic on several aspects of the training, responders scored between __1: No agreement__ and __5: Complete agreement__
 
-```{r}
-q67 <-  read_csv(file = "q67_pandemic_experience.csv") %>% 
-  pivot_longer(
-    cols = -c(Question, Total),
-    names_to = "score",
-    values_to = "count"
-  ) 
-slice(q67, 1:15) %>% 
-  ggplot( aes(x=score, y=count, fill=score) ) +
-  geom_histogram(stat = "identity", position = "dodge") +
-  facet_grid(~Question) +
-  scale_fill_brewer(palette = "OrRd") +
-  theme(axis.text.x = element_blank(),
-        axis.ticks.x = element_blank()) +
-  labs(fill="1: no agreement, 
-5: complete agreement") +
-  theme(legend.position="bottom")
+```{r, fig.height=10}
+q67 <-  
+  read_csv(file = "./input/q67_pandemic_experience.csv") %>% 
+  pivot_longer(cols = -c(Question, Total),
+               names_to = "score",
+               values_to = "count") %>% 
+  mutate(score=case_when(score=="1" ~ "1 - No agreement",
+                         score=="5" ~ "5 - Complete agreement",
+                         TRUE~as.character(score)),
+         Question=str_replace(Question, " \\(.*", ""),
+         Question=str_replace(Question, "(with|has)", "\\1\n"))
 
-slice(q67, 16:30) %>% 
-  ggplot( aes(x=score, y=count, fill=score) ) +
-  geom_histogram(stat = "identity", position = "dodge") +
-  facet_grid(~Question) +
-  scale_fill_brewer(palette = "OrRd") +
-  theme(axis.text.x = element_blank(),
-        axis.ticks.x = element_blank()) +
-  labs(fill="1: no agreement, 
-5: complete agreement") +
-  theme(legend.position="bottom")
+plots$covid1 <- slice(q67, 1:15) %>% 
+  geom_hist_wrapper(x.var = score, y.var = count) +
+  facet_wrap(~Question, strip.position = "right")
+  
+plots$covid2 <- slice(q67, 16:30) %>% 
+  geom_hist_wrapper(x.var = score, y.var = count) +
+  facet_wrap(~Question, strip.position = "right")
+
+ggarrange(plots$covid1, plots$covid2, nrow = 2, common.legend = T, legend = "right") %>% 
+  annotate_figure(
+    top=text_grob(label="The following question asks about how the\nCOVID-19 pandemic has affected your academic experience", size=16))
 
 ```
 
 We can see that our sample agrees almost completely that the pandemic had some kind of impact in their education, as shown in the 4th graph. Also, responders tend to agree that the workload has changes during the pandemic. In all other responses, there is an even distribution of agreement about the statements. 
 
+### The following question asks about well-being, mental-health and academic resources available at UBC
 
-### Q55 - The following question asks about well-being, mental-health and academic resources available at UBC
+```{r}
+read_csv("./input/q55_wellbeing.known.csv") %>% 
+  mutate("% recognition"=Total/82*100) %>% 
+  filter(Total>15) %>% 
+  rename("UBC service"=1, "Known by"=2) %>% 
+  formatted_kbl()
+```
 
-__Resources known by the students__
+```{r, eval=F}
+read_csv("./input/q55_wellbeing.known.csv") %>% 
+  filter(Total<15)
+```
 
-In the following 2 graphs, we have divided the most common resources available for UBC students and show the number of students that have heard about them. 
-
-![resources_known1](qualtrics_images/known_resources_1.png)
-
-![resources_known2](qualtrics_images/known_resources_2.png)
-From these graphs we can see that the most well-known resources to students in our program are UBC counselling, UBC health services, Library research commons and the workshops provided by G+PS. Resources for sexual violence or sexual assault are widely unknown according to the survey. Also, the less known service is the mistreatment office of the faculty of medicine. 
-
-__Evaluation of services__
+* The resources most well-known by _ExpMed_ students are UBC counselling, UBC health services, Library research commons and the G+PS workshops. 
+* Resources for sexual violence or sexual assault are widely unknown according to the survey.
+* Also, the less known service is the mistreatment office of the faculty of medicine. 
 
 Students also provided their level of satisfaction for the services that they have used. Here, we show the results for the 4 resources most commonly used. 
 
 ```{r}
-q55 <-  read_csv(file = "q55_evaluation_resources_used.csv") %>% 
-  pivot_longer(
-    cols = -c(Question, Total),
-    names_to = "score",
-    values_to = "count"
-  ) %>% 
+q55 <-  read_csv(file = "./input/q55_evaluation_resources_used.csv") %>% 
+  pivot_longer(cols = -c(Question, Total),
+               names_to = "score",
+               values_to = "count") %>%
+  mutate(Question=gsub("Grad.*tudies","G+PS", Question)) %>% 
   mutate(score=factor(score,
-                      levels = c("Extremely Dissatisfied", "Somewhat Dissatisfied", 
+                      levels = c("Extremely Dissatisfied","Somewhat Dissatisfied", 
                                  "Neither", "Somewhat Satisfied", "Extremely Satisfied")))
-ggplot( data=q55, aes(x=score, y=count, fill=score) ) +
-  geom_histogram(stat = "identity", position = "dodge") +
-  facet_grid(~Question) +
-  scale_fill_brewer(palette = "BuGn") +
-  theme(axis.text.x = element_blank(),
-        axis.ticks.x = element_blank()) +
-  theme(legend.position="bottom")
+
+geom_hist_wrapper(q55, x.var = score, y.var = count, 
+                  title="Level of satisfaction with best-known\nwellbeing services") +
+  facet_wrap(~Question, strip.position = "right")
 ```
 
 The most used resources are the UBC student health services (n=23), the Library research commons (n=18), UBC counselling (n=17) and G+PS workshops (n=16). Among them, the histograms show that the users are mostly satisfied for all but UBC counselling. There may be some increased demand due to the pandemic, but it may be interesting to explore why?
@@ -749,12 +646,30 @@ The most used resources are the UBC student health services (n=23), the Library 
 In this question, students ranked how much they agreed with every statement with __1: no agreement__ and __5:complete agreement__
 
 ```{r}
-q61<- read_csv(file = "q61_feeling_program.csv") %>%
-  pivot_longer(
-    cols = -c(Question, Total),
-    names_to = "score",
-    values_to = "count"
-  )
+q61<- read_csv(file = "./input/q61_feeling_program.csv") %>%
+  pivot_longer(cols = -c(Question, Total),
+               names_to = "score",
+               values_to = "count") %>% 
+  mutate(
+    score=case_when(score=="1"~"1 - No agreement",
+                    score=="5"~"5 - Complete agreement",
+                    TRUE ~ as.character(score))
+    )
+
+slice(q61, 1:15)  %>% 
+  geom_hist_wrapper(x.var = score, y.var = count) +
+  facet_wrap(~Question, strip.position = "right")
+
+slice(q61, 16:30)  %>% 
+  geom_hist_wrapper(x.var = score, y.var = count) +
+  facet_wrap(~Question, strip.position = "right")
+
+slice(q61, 31:40)  %>% 
+  geom_hist_wrapper(x.var = score, y.var = count) +
+  facet_wrap(~Question, strip.position = "right")
+
+
+
 
 # plot first 3 questions 
 slice(q61, 1:15)  %>% 
